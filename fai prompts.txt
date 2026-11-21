@@ -1,0 +1,3 @@
+cd "C:\Users\chait\OneDrive\Desktop\FAI"
+venv\Scripts\activate
+streamlit run app.py

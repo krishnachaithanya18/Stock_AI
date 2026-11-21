@@ -1,0 +1,34 @@
+# ============================================================
+# FAI Project: Indian Stock Market Agentic AI
+# requirements.txt — All project dependencies
+# ============================================================
+
+# --- Core AI & Agent Orchestration ---
+langgraph==0.2.70          # Multi-agent graph orchestration (the brain of our system)
+langchain==0.3.17          # LangChain base library (tools, prompts, chains)
+langchain-google-genai==2.0.9  # LangChain connector for Google Gemini LLM
+google-generativeai==0.8.3     # Google Gemini API SDK
+
+# --- Market Data ---
+yfinance==0.2.50           # Fetch stock data from Yahoo Finance (NSE/BSE supported)
+
+# --- Data Processing ---
+pandas==2.2.3              # DataFrames — the standard for financial data tables
+numpy==1.26.4              # Numerical computations (used internally by pandas/ta)
+
+# --- Technical Analysis ---
+ta==0.11.0                 # Technical Analysis library: RSI, MACD, SMA, etc.
+
+# --- Web / News ---
+requests==2.32.3           # HTTP requests library (used by yfinance and news fetching)
+# Note: We use stdlib xml.etree.ElementTree to parse RSS (no feedparser needed)
+
+# --- Frontend Dashboard ---
+streamlit==1.40.2          # Build the interactive web dashboard (no HTML/JS needed)
+plotly==5.24.1             # Interactive charts for stock prices and indicators
+
+# --- Environment & Config ---
+python-dotenv==1.0.1       # Load environment variables from .env file securely
+
+# --- Utilities ---
+pydantic==2.10.4           # Data validation — used heavily by LangGraph state models

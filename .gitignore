@@ -1,0 +1,50 @@
+# ============================================================
+# .gitignore — Files that should NEVER be committed to git
+# ============================================================
+
+# --- Environment & Secrets (MOST IMPORTANT) ---
+.env                    # Your actual API keys — never share this!
+*.env
+.env.local
+.env.*.local
+
+# --- Python cache files ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# --- Virtual environments ---
+venv/
+env/
+.venv/
+ENV/
+
+# --- Jupyter Notebooks checkpoints ---
+.ipynb_checkpoints/
+
+# --- Generated reports (can be large) ---
+reports/*.html
+reports/*.pdf
+reports/*.json
+
+# --- IDE & editor files ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# --- Package build artifacts ---
+build/
+dist/
+*.egg-info/
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Test output ---
+.pytest_cache/
+htmlcov/
+.coverage
