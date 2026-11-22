@@ -482,11 +482,16 @@ def _generate_signals(rsi_data, macd_data, sma_data, bb_data, sr_data, vol_data,
         score -= 2
 
     if "Golden Cross" in trend_struct:
-        bullish.append(f"Moving Average structure indicates a Golden Cross.")
+        bullish.append(f"Moving Average structure indicates a Golden Cross (Bullish alignment).")
         score += 2
     elif "Death Cross" in trend_struct:
-        bearish.append(f"Moving Average structure indicates a Death Cross.")
-        score -= 2
+        if "Below SMA200" in price_sma200:
+            bearish.append(f"Moving Average structure confirms a macro Death Cross (SMA 50 < SMA 200 with price below).")
+            score -= 2
+        else:
+            # Price is recovering above SMA200 while SMA50 is still catching up
+            bearish.append(f"Moving averages show lagging Death Cross structure (SMA 50 < SMA 200) despite price recovery above SMA 200.")
+            score -= 1
 
     # Bollinger Bands
     pband = bb_data.get("percent_b")

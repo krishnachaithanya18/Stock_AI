@@ -129,7 +129,16 @@ st.markdown("""
     background-color: #121824;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 12px 16px;
+    padding: 10px 14px;
+}
+[data-testid="stMetricValue"] {
+    font-size: 1.15rem !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+}
+[data-testid="stMetricLabel"] {
+    font-size: 0.78rem !important;
+    color: #94A3B8 !important;
 }
 
 /* Prominent Verdict Banners */
@@ -218,7 +227,7 @@ def run_cached_stock_analysis(symbol: str, history_days: int, exchange: str):
 def render_market_overview_ribbon():
     indices, status = get_cached_market_overview()
 
-    ribbon_html = '<div class="market-ribbon">'
+    items_html = []
     for idx in indices:
         val = idx["value_fmt"]
         chg = idx["change_pts_fmt"]
@@ -227,23 +236,24 @@ def render_market_overview_ribbon():
         color = "#10B981" if is_up else ("#EF4444" if idx["direction"] == "down" else "#94A3B8")
         sign = "+" if is_up and not chg.startswith("+") else ""
 
-        ribbon_html += f"""
-        <div class="market-index-item">
-            <span class="market-index-name">{idx['name']}</span>
-            <span class="market-index-val">{val}</span>
-            <span style="color:{color};font-weight:600;">{sign}{chg} ({pct})</span>
-        </div>
-        """
+        items_html.append(
+            f'<div class="market-index-item">'
+            f'<span class="market-index-name">{idx["name"]}</span>'
+            f'<span class="market-index-val">{val}</span>'
+            f'<span style="color:{color};font-weight:600;">{sign}{chg} ({pct})</span>'
+            f'</div>'
+        )
 
     # Market status badge
     badge_bg = "rgba(16, 185, 129, 0.2)" if status["is_open"] else "rgba(239, 68, 68, 0.2)"
     badge_color = "#10B981" if status["is_open"] else "#EF4444"
-    ribbon_html += f"""
-    <div class="market-status-pill" style="background:{badge_bg};color:{badge_color};">
-        {status['badge']} &nbsp;·&nbsp; {status['current_ist']}
-    </div>
-    </div>
-    """
+    status_html = (
+        f'<div class="market-status-pill" style="background:{badge_bg};color:{badge_color};">'
+        f'{status["badge"]} &nbsp;·&nbsp; {status["current_ist"]}'
+        f'</div>'
+    )
+
+    ribbon_html = f'<div class="market-ribbon">{"".join(items_html)}{status_html}</div>'
     st.markdown(ribbon_html, unsafe_allow_html=True)
 
 
@@ -298,17 +308,25 @@ def render_search_hero():
                     label = f"{sug['symbol']} · {sug['name'][:18]}..."
                     if st.button(label, key=f"sug_{sug['symbol']}_{i}", use_container_width=True):
                         st.session_state["current_symbol"] = sug["symbol"]
+                        st.session_state["stock_search_input"] = sug["symbol"]
+                        st.session_state.pop("analysis_results", None)
                         st.rerun()
 
-    # Popular Stocks Quick Chips
-    st.markdown("<div style='font-size:0.8rem;color:#64748B;margin:6px 0 4px 0;'>Popular Benchmarks & Leaders:</div>", unsafe_allow_html=True)
+    # Popular Stocks Quick Chips (2 rows of 5 for optimal button spacing)
+    st.markdown("<div style='font-size:0.8rem;color:#64748B;margin:8px 0 4px 0;'>Popular Benchmarks & Leaders:</div>", unsafe_allow_html=True)
     chips = get_popular_stock_chips()
-    chip_cols = st.columns(len(chips))
-    for i, (sym, short_name, bse_c) in enumerate(chips):
-        with chip_cols[i]:
-            if st.button(short_name, key=f"chip_{sym}", use_container_width=True):
-                st.session_state["current_symbol"] = sym
-                st.rerun()
+    row1 = chips[:5]
+    row2 = chips[5:10]
+
+    for row_chips in [row1, row2]:
+        cols = st.columns(len(row_chips))
+        for i, (sym, short_name, bse_c) in enumerate(row_chips):
+            with cols[i]:
+                if st.button(short_name, key=f"chip_{sym}", use_container_width=True):
+                    st.session_state["current_symbol"] = sym
+                    st.session_state["stock_search_input"] = sym
+                    st.session_state.pop("analysis_results", None)
+                    st.rerun()
 
     st.session_state["current_symbol"] = query_input
     return query_input, exchange_choice, execute_analysis
@@ -455,30 +473,42 @@ def render_bullish_bearish_matrix(tech_data: dict, fund_data: dict, news_data: d
     col_bull, col_bear = st.columns(2)
 
     with col_bull:
-        st.markdown("""
-        <div class="matrix-card">
-            <div class="matrix-card-title" style="color:#10B981;">🟢 BULLISH ARGUMENTS & CATALYSTS</div>
-        """, unsafe_allow_html=True)
+        bull_items = []
         for s in tech_data.get("signals", {}).get("bullish", [])[:4]:
-            st.markdown(f"• <span style='font-size:0.88rem;'>{s}</span>", unsafe_allow_html=True)
+            bull_items.append(f'<li style="margin-bottom:6px;font-size:0.88rem;">{s}</li>')
         for s in fund_data.get("strengths", [])[:4]:
-            st.markdown(f"• <span style='font-size:0.88rem;'>{s}</span>", unsafe_allow_html=True)
+            bull_items.append(f'<li style="margin-bottom:6px;font-size:0.88rem;">{s}</li>')
         for c in news_data.get("positive_factors", [])[:2]:
-            st.markdown(f"• <span style='font-size:0.88rem;'>[News Catalyst] {c}</span>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+            bull_items.append(f'<li style="margin-bottom:6px;font-size:0.88rem;"><b>[News Catalyst]</b> {c}</li>')
+        if not bull_items:
+            bull_items.append('<li style="color:#64748B;font-size:0.88rem;">No strong bullish catalysts identified.</li>')
+
+        bull_html = (
+            f'<div class="matrix-card">'
+            f'<div class="matrix-card-title" style="color:#10B981;">🟢 BULLISH ARGUMENTS & CATALYSTS</div>'
+            f'<ul style="padding-left:18px;margin:8px 0 0 0;list-style-type:disc;">{"".join(bull_items)}</ul>'
+            f'</div>'
+        )
+        st.markdown(bull_html, unsafe_allow_html=True)
 
     with col_bear:
-        st.markdown("""
-        <div class="matrix-card">
-            <div class="matrix-card-title" style="color:#EF4444;">🔴 BEARISH ARGUMENTS & RISKS</div>
-        """, unsafe_allow_html=True)
+        bear_items = []
         for s in tech_data.get("signals", {}).get("bearish", [])[:4]:
-            st.markdown(f"• <span style='font-size:0.88rem;'>{s}</span>", unsafe_allow_html=True)
+            bear_items.append(f'<li style="margin-bottom:6px;font-size:0.88rem;">{s}</li>')
         for c in fund_data.get("concerns", [])[:4]:
-            st.markdown(f"• <span style='font-size:0.88rem;'>{c}</span>", unsafe_allow_html=True)
+            bear_items.append(f'<li style="margin-bottom:6px;font-size:0.88rem;">{c}</li>')
         for r in risk_data.get("identified_risks", [])[:3]:
-            st.markdown(f"• <span style='font-size:0.88rem;'>[{r['category']}] {r['description']}</span>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+            bear_items.append(f'<li style="margin-bottom:6px;font-size:0.88rem;"><b>[{r["category"]}]</b> {r["description"]}</li>')
+        if not bear_items:
+            bear_items.append('<li style="color:#64748B;font-size:0.88rem;">No critical bearish factors identified.</li>')
+
+        bear_html = (
+            f'<div class="matrix-card">'
+            f'<div class="matrix-card-title" style="color:#EF4444;">🔴 BEARISH ARGUMENTS & RISKS</div>'
+            f'<ul style="padding-left:18px;margin:8px 0 0 0;list-style-type:disc;">{"".join(bear_items)}</ul>'
+            f'</div>'
+        )
+        st.markdown(bear_html, unsafe_allow_html=True)
 
 
 # =======================================================================

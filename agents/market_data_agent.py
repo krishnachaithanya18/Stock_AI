@@ -151,7 +151,7 @@ def run_market_data_agent(symbol: str, history_days: int = 90, exchange: str = "
         "fifty_two_week_high": high_52,
         "fifty_two_week_low": low_52,
         "range_position_pct": range_position_pct,
-        "dividend_yield": safe_round((info.get("dividendYield") or 0) * 100, 2) if info.get("dividendYield") else 0.0,
+        "dividend_yield": safe_round(info.get("dividendYield") or 0.0, 2),  # yfinance returns as % already (e.g. 0.44 = 0.44%)
         "beta": safe_round(info.get("beta")),
         "exchange": "BSE" if resolved_ticker.endswith(".BO") else "NSE",
         "currency": info.get("currency", "INR"),
