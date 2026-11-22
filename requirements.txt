@@ -25,7 +25,8 @@ requests==2.32.3           # HTTP requests library (used by yfinance and news fe
 
 # --- Frontend Dashboard ---
 streamlit==1.40.2          # Build the interactive web dashboard (no HTML/JS needed)
-plotly==5.24.1             # Interactive charts for stock prices and indicators
+plotly>=7.1.0              # Interactive charts for stock prices and indicators
+pytz>=2024.1               # Timezone support for IST market hours (also a yfinance dependency)
 
 # --- Environment & Config ---
 python-dotenv==1.0.1       # Load environment variables from .env file securely

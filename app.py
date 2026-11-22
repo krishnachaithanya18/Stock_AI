@@ -1,804 +1,808 @@
 """
-app.py — Streamlit Dashboard (Phase 8 — Full Version)
-======================================================
-WHAT THIS FILE DOES:
-  Builds a complete, professional stock analysis dashboard using Streamlit.
-  When the user enters a stock symbol and clicks "Analyse Stock", it runs
-  the entire LangGraph multi-agent pipeline and displays all results
-  in a structured, tabbed interface.
-
-HOW TO RUN:
-  streamlit run app.py
-
-STREAMLIT BASICS (for beginners):
-  - Every Python statement that calls st.something() adds a UI element
-  - The script re-runs top-to-bottom every time the user interacts
-  - st.session_state stores values that survive re-runs (like cache)
-  - @st.cache_data decorates functions whose results should be cached
-  - st.spinner() shows a loading indicator during long operations
-
-CHARTING:
-  We use Streamlit's built-in charts (st.line_chart, st.bar_chart)
-  which use Altair/Vega-Lite underneath — no extra packages needed.
+app.py — Indian Stock Market Agentic AI (Institutional Terminal Dashboard)
+===========================================================================
+Multi-Agent Stock Research and Analysis Platform for Indian Markets (NSE & BSE)
+Powered by LangGraph, Google Gemini, and yfinance.
 """
 
-import streamlit as st
-import pandas as pd
 import sys
 import os
+import streamlit as st
+import pandas as pd
+import yfinance as yf
 
-# Add project root to path so imports work correctly
+# Ensure project root in sys.path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config import APP_TITLE, APP_VERSION, validate_config
 from graph.workflow import run_analysis
+from utils.market_overview import fetch_market_indices, get_market_status
+from utils.stock_search import resolve_stock_symbol, search_indian_stocks, get_popular_stock_chips
+from utils.charting import create_price_and_volume_chart, create_rsi_chart, create_macd_chart
+from utils.watchlist_manager import (
+    load_watchlist, add_to_watchlist, remove_from_watchlist,
+    get_watchlist_live_data, add_price_alert, check_alerts_status, remove_alert
+)
+from utils.stock_comparator import compare_stocks
+from utils.helpers import format_currency, format_percentage, safe_round
 
 
-# =============================================================
-# PAGE CONFIGURATION — Must be the FIRST Streamlit call
-# =============================================================
+# =======================================================================
+# STREAMLIT PAGE CONFIGURATION
+# =======================================================================
 st.set_page_config(
-    page_title=APP_TITLE,
+    page_title=f"{APP_TITLE} | Financial Terminal",
     page_icon="📈",
-    layout="wide",           # Use full browser width
-    initial_sidebar_state="expanded",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 
-# =============================================================
-# CUSTOM CSS — Professional Financial Dashboard Styling
-# =============================================================
+# =======================================================================
+# DARK FINANCIAL TERMINAL STYLING (CSS)
+# =======================================================================
 st.markdown("""
 <style>
-/* Main background */
-.main { background-color: #0e1117; }
+/* Base Dark Financial Palette */
+:root {
+    --bg-main: #0B0E14;
+    --bg-card: #121824;
+    --bg-hover: #1A2234;
+    --border-color: #232D42;
+    --text-primary: #F1F5F9;
+    --text-secondary: #94A3B8;
+    --text-muted: #64748B;
+    --accent-blue: #38BDF8;
+    --bull-green: #10B981;
+    --bear-red: #EF4444;
+    --neutral-amber: #F59E0B;
+}
 
-/* Hero search box */
-.hero-container {
-    background: linear-gradient(135deg, #1a1f35 0%, #0e1117 100%);
-    border: 1px solid #2d3748;
-    border-radius: 16px;
-    padding: 40px 48px 36px 48px;
-    margin-bottom: 24px;
-    text-align: center;
+/* Background */
+.stApp {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
 }
-.hero-title {
-    font-size: 2.4rem;
-    font-weight: 800;
-    color: #e2e8f0;
-    margin: 0 0 6px 0;
-    letter-spacing: -0.5px;
-}
-.hero-subtitle {
-    font-size: 1.0rem;
-    color: #718096;
-    margin-bottom: 28px;
-}
-.chip-row {
+
+/* Top Market Overview Ribbon */
+.market-ribbon {
     display: flex;
-    gap: 8px;
-    justify-content: center;
+    gap: 16px;
+    align-items: center;
+    background: #0E131E;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px 18px;
+    margin-bottom: 20px;
     flex-wrap: wrap;
-    margin-top: 16px;
 }
-.stock-chip {
-    background: #2d3748;
-    color: #e2e8f0;
-    padding: 4px 14px;
-    border-radius: 20px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    cursor: pointer;
-    border: 1px solid #4a5568;
+.market-index-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.88rem;
+    padding-right: 18px;
+    border-right: 1px solid #1E293B;
+}
+.market-index-name {
+    font-weight: 700;
+    color: var(--text-secondary);
+    letter-spacing: 0.3px;
+}
+.market-index-val {
+    font-weight: 700;
+    color: #F8FAFC;
+}
+.market-status-pill {
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-left: auto;
 }
 
-/* Metric cards */
+/* Hero Terminal Box */
+.terminal-hero {
+    background: linear-gradient(180deg, #121824 0%, #0E131E 100%);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 24px 28px 18px 28px;
+    margin-bottom: 20px;
+}
+.terminal-title {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #F8FAFC;
+    letter-spacing: -0.4px;
+    margin: 0 0 4px 0;
+}
+.terminal-subtitle {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+}
+
+/* Metric Cards */
 [data-testid="metric-container"] {
-    background-color: #1c2333;
-    border: 1px solid #2d3748;
+    background-color: #121824;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 16px;
+    padding: 12px 16px;
 }
 
-/* Section headers */
-.section-header {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #e2e8f0;
-    padding: 8px 0 4px 0;
-    border-bottom: 2px solid #2d3748;
+/* Prominent Verdict Banners */
+.verdict-banner {
+    border-radius: 8px;
+    padding: 22px 28px;
+    margin: 16px 0 20px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid;
+}
+.verdict-strong-buy {
+    background: linear-gradient(90deg, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0.05) 100%);
+    border-color: #10B981;
+}
+.verdict-buy {
+    background: linear-gradient(90deg, rgba(52, 211, 153, 0.15) 0%, rgba(52, 211, 153, 0.05) 100%);
+    border-color: #34D399;
+}
+.verdict-hold {
+    background: linear-gradient(90deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.05) 100%);
+    border-color: #F59E0B;
+}
+.verdict-avoid {
+    background: linear-gradient(90deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.05) 100%);
+    border-color: #EF4444;
+}
+
+.verdict-text-large {
+    font-size: 2.2rem;
+    font-weight: 900;
+    letter-spacing: 0.5px;
+    margin: 0;
+}
+
+/* Matrix Cards */
+.matrix-card {
+    background: #121824;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 18px;
+    height: 100%;
+}
+.matrix-card-title {
+    font-size: 0.95rem;
+    font-weight: 700;
     margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #1E293B;
 }
 
-/* Signal badge styles */
-.signal-bullish {
-    background-color: #1a4731;
-    color: #48bb78;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-weight: 700;
-    font-size: 0.9rem;
-}
-.signal-bearish {
-    background-color: #4a1942;
-    color: #fc8181;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-weight: 700;
-    font-size: 0.9rem;
-}
-.signal-neutral {
-    background-color: #2d3748;
-    color: #e2e8f0;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-weight: 700;
-    font-size: 0.9rem;
-}
-.signal-mixed {
-    background-color: #3d2b00;
-    color: #f6ad55;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-weight: 700;
-    font-size: 0.9rem;
-}
-
-/* Risk badge styles */
-.risk-high     { color: #fc8181; font-weight: 700; }
-.risk-moderate { color: #f6ad55; font-weight: 700; }
-.risk-low      { color: #48bb78; font-weight: 700; }
-
-/* Report text area */
-.report-box {
-    background-color: #1a202c;
-    border: 1px solid #2d3748;
-    border-radius: 8px;
-    padding: 20px;
-    font-family: monospace;
-    font-size: 0.85rem;
-    white-space: pre-wrap;
-    max-height: 600px;
-    overflow-y: auto;
-}
-
-/* Disclaimer */
-.disclaimer {
-    background-color: #1a2744;
-    border-left: 4px solid #4299e1;
+/* Disclaimer text */
+.institutional-disclaimer {
+    background-color: #0F172A;
+    border-left: 3px solid #38BDF8;
     padding: 12px 16px;
     border-radius: 4px;
-    font-size: 0.8rem;
-    color: #90cdf4;
-    margin-top: 16px;
+    font-size: 0.78rem;
+    color: #94A3B8;
+    line-height: 1.5;
+    margin-top: 24px;
 }
 </style>
 """, unsafe_allow_html=True)
 
 
-# =============================================================
-# SIDEBAR — Settings only (search moved to main page)
-# =============================================================
-def render_sidebar():
-    """Render the left sidebar with settings and project info."""
-
-    with st.sidebar:
-        st.markdown("## 📈 Indian Stock Market AI")
-        st.caption(f"Version {APP_VERSION} | LangGraph Multi-Agent System")
-        st.divider()
-
-        # --- Settings ---
-        st.markdown("### ⚙️ Analysis Settings")
-        history_days = st.slider(
-            "Historical Data (days)",
-            min_value=30, max_value=180, value=90, step=30,
-            help="Number of past trading days to fetch"
-        )
-        max_news = st.slider(
-            "Max News Articles",
-            min_value=5, max_value=15, value=10, step=5,
-        )
-
-        st.divider()
-        st.markdown("### 📚 Agent Pipeline")
-        for icon, name, tool in [
-            ("1️⃣", "Market Data Agent",  "yfinance"),
-            ("2️⃣", "Technical Agent",    "ta library"),
-            ("3️⃣", "News Agent",         "Google RSS"),
-            ("4️⃣", "Research Agent",     "Rule-based"),
-            ("5️⃣", "Report Agent",       "Gemini LLM"),
-        ]:
-            st.markdown(f"{icon} **{name}** `{tool}`")
-
-        st.divider()
-        st.markdown("""
-<div class="disclaimer">
-⚠️ <b>Disclaimer:</b> Academic project only.
-Not financial advice. Data is delayed
-~15–20 min. Never use for real trading.
-</div>
-""", unsafe_allow_html=True)
-
-    return history_days, max_news
+# =======================================================================
+# CACHED DATA FETCHING
+# =======================================================================
+@st.cache_data(ttl=60, show_spinner=False)
+def get_cached_market_overview():
+    indices = fetch_market_indices()
+    status = get_market_status()
+    return indices, status
 
 
-# =============================================================
-# HERO SEARCH BAR — Main page stock input
-# =============================================================
-def render_hero_search() -> tuple:
+@st.cache_data(ttl=300, show_spinner=False)
+def run_cached_stock_analysis(symbol: str, history_days: int, exchange: str):
+    return run_analysis(symbol=symbol, history_days=history_days, exchange=exchange)
+
+
+# =======================================================================
+# TOP MARKET OVERVIEW BAR
+# =======================================================================
+def render_market_overview_ribbon():
+    indices, status = get_cached_market_overview()
+
+    ribbon_html = '<div class="market-ribbon">'
+    for idx in indices:
+        val = idx["value_fmt"]
+        chg = idx["change_pts_fmt"]
+        pct = idx["change_pct_fmt"]
+        is_up = idx["direction"] == "up"
+        color = "#10B981" if is_up else ("#EF4444" if idx["direction"] == "down" else "#94A3B8")
+        sign = "+" if is_up and not chg.startswith("+") else ""
+
+        ribbon_html += f"""
+        <div class="market-index-item">
+            <span class="market-index-name">{idx['name']}</span>
+            <span class="market-index-val">{val}</span>
+            <span style="color:{color};font-weight:600;">{sign}{chg} ({pct})</span>
+        </div>
+        """
+
+    # Market status badge
+    badge_bg = "rgba(16, 185, 129, 0.2)" if status["is_open"] else "rgba(239, 68, 68, 0.2)"
+    badge_color = "#10B981" if status["is_open"] else "#EF4444"
+    ribbon_html += f"""
+    <div class="market-status-pill" style="background:{badge_bg};color:{badge_color};">
+        {status['badge']} &nbsp;·&nbsp; {status['current_ist']}
+    </div>
+    </div>
     """
-    Render the prominent hero-style search bar on the main page.
+    st.markdown(ribbon_html, unsafe_allow_html=True)
 
-    WHY SESSION STATE FOR THE SYMBOL?
-      Streamlit re-runs the script from top to bottom on every
-      interaction. st.session_state["search_symbol"] persists the
-      current symbol value across re-runs, so quick-select buttons
-      can update the text input correctly.
 
-    Returns:
-        (symbol, analyse_clicked) tuple
-    """
+# =======================================================================
+# HERO SEARCH COMPONENT
+# =======================================================================
+def render_search_hero():
+    if "current_symbol" not in st.session_state:
+        st.session_state["current_symbol"] = "RELIANCE"
+    if "selected_exchange" not in st.session_state:
+        st.session_state["selected_exchange"] = "NSE"
 
-    # Initialise session state key on first run
-    if "search_symbol" not in st.session_state:
-        st.session_state["search_symbol"] = "RELIANCE.NS"
-
-    # --- Hero container ---
     st.markdown("""
-<div class="hero-container">
-  <div class="hero-title">📈 Indian Stock Market Agentic AI</div>
-  <div class="hero-subtitle">
-      Multi-Agent Research System · LangGraph · Google Gemini · NSE / BSE
-  </div>
-</div>
-""", unsafe_allow_html=True)
+    <div class="terminal-hero">
+        <div class="terminal-title">INDIAN STOCK MARKET AGENTIC AI</div>
+        <div class="terminal-subtitle">
+            Autonomous Institutional Research Engine · LangGraph Multi-Agent Orchestration · Google Gemini · NSE & BSE Universe
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # --- Search row: text input + button side by side ---
-    col_input, col_btn = st.columns([5, 1])
+    col_input, col_exch, col_btn = st.columns([5, 2, 2])
 
     with col_input:
-        symbol = st.text_input(
-            label="Stock Symbol",
-            value=st.session_state["search_symbol"],
-            placeholder="Enter NSE/BSE symbol — e.g.  RELIANCE.NS  ·  TCS.NS  ·  INFY.NS",
+        query_input = st.text_input(
+            label="Search Indian Stocks",
+            value=st.session_state["current_symbol"],
+            placeholder="Search company name, NSE symbol (TCS, INFY), or BSE code (500325)...",
             label_visibility="collapsed",
-            key="hero_input",
-            help=(
-                "NSE stocks: add .NS suffix  →  RELIANCE.NS, TCS.NS, INFY.NS\n"
-                "BSE stocks: add .BO suffix  →  RELIANCE.BO\n"
-                "Press Enter or click Analyse to run the 5-agent pipeline."
-            ),
-        ).upper().strip()
+            key="stock_search_input"
+        ).strip()
+
+    with col_exch:
+        exchange_choice = st.selectbox(
+            "Exchange",
+            options=["NSE", "BSE", "AUTO"],
+            index=0 if st.session_state["selected_exchange"] == "NSE" else 1,
+            label_visibility="collapsed"
+        )
+        st.session_state["selected_exchange"] = exchange_choice
 
     with col_btn:
-        analyse_clicked = st.button(
-            "🚀 Analyse",
-            type="primary",
-            use_container_width=True,
-        )
+        execute_analysis = st.button("🚀 Run Analysis", type="primary", use_container_width=True)
 
-    # --- Quick-select popular stocks ---
-    st.markdown(
-        "<div style='text-align:center;color:#718096;"
-        "font-size:0.82rem;margin:4px 0 8px 0'>Popular Indian Stocks:</div>",
-        unsafe_allow_html=True
-    )
+    # Search Autocomplete / Suggestions
+    if query_input and len(query_input) >= 2:
+        suggestions = search_indian_stocks(query_input, limit=4)
+        if suggestions:
+            sug_cols = st.columns(len(suggestions))
+            for i, sug in enumerate(suggestions):
+                with sug_cols[i]:
+                    label = f"{sug['symbol']} · {sug['name'][:18]}..."
+                    if st.button(label, key=f"sug_{sug['symbol']}_{i}", use_container_width=True):
+                        st.session_state["current_symbol"] = sug["symbol"]
+                        st.rerun()
 
-    popular = [
-        ("RELIANCE.NS", "Reliance"),
-        ("TCS.NS",      "TCS"),
-        ("INFY.NS",     "Infosys"),
-        ("HDFCBANK.NS", "HDFC Bank"),
-        ("WIPRO.NS",    "Wipro"),
-        ("ICICIBANK.NS","ICICI Bank"),
-        ("LT.NS",       "L&T"),
-        ("BHARTIARTL.NS","Airtel"),
-    ]
+    # Popular Stocks Quick Chips
+    st.markdown("<div style='font-size:0.8rem;color:#64748B;margin:6px 0 4px 0;'>Popular Benchmarks & Leaders:</div>", unsafe_allow_html=True)
+    chips = get_popular_stock_chips()
+    chip_cols = st.columns(len(chips))
+    for i, (sym, short_name, bse_c) in enumerate(chips):
+        with chip_cols[i]:
+            if st.button(short_name, key=f"chip_{sym}", use_container_width=True):
+                st.session_state["current_symbol"] = sym
+                st.rerun()
 
-    # Render chips as columns of buttons
-    cols = st.columns(len(popular))
-    for col, (sym, label) in zip(cols, popular):
-        if col.button(label, key=f"chip_{sym}", use_container_width=True):
-            # Update the session state so next render shows new symbol
-            st.session_state["search_symbol"] = sym
-            st.rerun()
-
-    # Sync symbol from session state if changed by chip click
-    if st.session_state.get("search_symbol") != symbol and not analyse_clicked:
-        symbol = st.session_state["search_symbol"]
-    else:
-        st.session_state["search_symbol"] = symbol
-
-    return symbol, analyse_clicked
+    st.session_state["current_symbol"] = query_input
+    return query_input, exchange_choice, execute_analysis
 
 
-# =============================================================
-# RUN ANALYSIS (cached so re-renders don't re-fetch)
-# =============================================================
-@st.cache_data(show_spinner=False, ttl=300)   # Cache for 5 minutes
-def cached_analysis(symbol: str, history_days: int, max_news: int) -> dict:
-    """
-    Run the LangGraph pipeline and cache the result.
+# =======================================================================
+# VERDICT CARD COMPONENT ("Buy or Not?")
+# =======================================================================
+def render_verdict_section(decision_data: dict, market_data: dict):
+    verdict = decision_data.get("verdict", "HOLD")
+    verdict_cls = f"verdict-{verdict.lower().replace(' ', '-')}"
+    prob = decision_data.get("probability_positive_return", 50.0)
+    horizon = decision_data.get("holding_period", "Medium term: 1–3 months")
+    conf = decision_data.get("model_confidence", 70.0)
+    trade = decision_data.get("trade_setup", {})
 
-    @st.cache_data means: if this function is called again with the
-    SAME arguments within 300 seconds, return the cached result
-    instead of re-running all 5 agents. This avoids redundant API calls.
-    """
-    return run_analysis(symbol, history_days, max_news)
+    st.markdown(f"""
+    <div class="verdict-banner {verdict_cls}">
+        <div>
+            <div style="font-size:0.82rem;font-weight:700;color:#94A3B8;letter-spacing:1px;text-transform:uppercase;">
+                AI Investment Recommendation
+            </div>
+            <div class="verdict-text-large" style="color:{decision_data.get('verdict_color', '#F59E0B')}">
+                {verdict}
+            </div>
+            <div style="font-size:0.92rem;color:#E2E8F0;margin-top:4px;">
+                {decision_data.get('verdict_desc', '')}
+            </div>
+        </div>
+        <div style="text-align:right;">
+            <div style="font-size:0.82rem;color:#94A3B8;">Recommended Holding Horizon</div>
+            <div style="font-size:1.15rem;font-weight:800;color:#38BDF8;">{horizon}</div>
+            <div style="font-size:0.82rem;color:#64748B;margin-top:4px;">Composite Score: {decision_data.get('composite_score', 0):+0.1f} / 100</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Key Quantitative Trade Setup Metrics Row
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("P(Positive Return)", f"{prob}%", help=decision_data.get("probability_methodology", ""))
+    c2.metric("Target Price (Upside)", trade.get("target_price_fmt", "N/A"), delta=trade.get("expected_return_fmt"))
+    c3.metric("Stop-Loss (Downside)", trade.get("stop_loss_fmt", "N/A"), delta=trade.get("potential_downside_fmt"), delta_color="inverse")
+    c4.metric("Risk-to-Reward", trade.get("risk_reward_ratio", "1 : 2.0"))
+    c5.metric("Model Confidence", f"{conf}% ({decision_data.get('confidence_rating', 'MODERATE')})")
+
+    st.caption(f"Suggested Entry Range: **{trade.get('entry_range', 'N/A')}** · Current Price: **{market_data.get('current_price_fmt', 'N/A')}**")
 
 
-# =============================================================
-# DASHBOARD RENDERING FUNCTIONS
-# =============================================================
-
-def render_header(market_data: dict):
-    """Top section: company name, price, key metrics."""
-
+# =======================================================================
+# STOCK OVERVIEW HEADER
+# =======================================================================
+def render_stock_overview_header(market_data: dict, decision_data: dict):
     company = market_data.get("company_name", "Unknown")
-    symbol  = market_data.get("symbol", "")
-    price   = market_data.get("current_price_fmt", "N/A")
-    pc      = market_data.get("price_change", {})
-    mi      = market_data.get("market_info", {})
+    sym = market_data.get("symbol", "")
+    price = market_data.get("current_price_fmt", "N/A")
+    pc = market_data.get("price_change", {})
+    mi = market_data.get("market_info", {})
 
-    st.title(f"📈 {company}")
-    st.caption(f"{symbol} · Yahoo Finance (delayed ~15-20 min) · {market_data.get('data_source', {}).get('fetched_at', '')}")
+    col_title, col_watch = st.columns([6, 2])
+    with col_title:
+        st.markdown(f"## {company} <span style='font-size:1.1rem;color:#64748B;'>({sym})</span>", unsafe_allow_html=True)
+        st.caption(f"Exchange: {mi.get('exchange', 'NSE')} · Sector: {mi.get('sector', 'N/A')} · Source: Yahoo Finance (~15 min delay)")
 
-    # Key metrics row
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    with col_watch:
+        st.write("")
+        verdict = decision_data.get("verdict", "HOLD")
+        if st.button("⭐ Add to Watchlist", key="btn_add_watchlist", use_container_width=True):
+            add_to_watchlist(sym, company, verdict)
+            st.success(f"Added {sym} to Watchlist!")
 
-    col1.metric("Current Price",   price,
-                delta=pc.get("one_day_pct_fmt", "N/A"),
-                delta_color="normal")
-    col2.metric("1-Week Change",   pc.get("one_week_pct_fmt", "N/A"))
-    col3.metric("1-Month Change",  pc.get("one_month_pct_fmt", "N/A"))
-    col4.metric("Market Cap",      mi.get("market_cap_fmt", "N/A"))
-    col5.metric("P/E Ratio",       str(mi.get("pe_ratio", "N/A")))
-    col6.metric("Beta",            str(mi.get("beta", "N/A")))
+    # Top Metrics
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1.metric("Current Price", price, delta=pc.get("one_day_pct_fmt", "N/A"))
+    m2.metric("1-Week Return", pc.get("one_week_pct_fmt", "N/A"))
+    m3.metric("1-Month Return", pc.get("one_month_pct_fmt", "N/A"))
+    m4.metric("Market Cap", mi.get("market_cap_fmt", "N/A"))
+    m5.metric("52-Week High", f"₹{mi.get('fifty_two_week_high', 'N/A')}")
+    m6.metric("52-Week Low", f"₹{mi.get('fifty_two_week_low', 'N/A')}")
 
 
-def render_price_chart(market_data: dict):
-    """Render the historical price and volume chart."""
-
-    st.markdown('<div class="section-header">📊 Historical Price Chart</div>', unsafe_allow_html=True)
-
+# =======================================================================
+# INTERACTIVE CHARTS TAB
+# =======================================================================
+def render_charts_tab(market_data: dict, tech_data: dict):
     hist = market_data.get("historical_df")
     if hist is None or hist.empty:
-        st.warning("No historical data available for chart.")
+        st.warning("Historical price data unavailable for charting.")
         return
 
-    # Prepare close price series
-    close_df = pd.DataFrame({
-        "Close Price (₹)": hist["Close"]
-    })
-    close_df.index = pd.to_datetime(close_df.index).tz_localize(None)
+    ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([2, 2, 2, 2])
+    with ctrl1:
+        chart_type = st.radio("Style", ["Candlestick", "Line"], horizontal=True, label_visibility="collapsed")
+    with ctrl2:
+        show_sma = st.checkbox("Overlay SMAs (20, 50, 200)", value=True)
+    with ctrl3:
+        show_bb = st.checkbox("Bollinger Bands", value=True)
+    with ctrl4:
+        timeframe = st.selectbox("Lookback", ["Full Fetched", "Last 90 Days", "Last 60 Days", "Last 30 Days"], index=0, label_visibility="collapsed")
 
-    st.line_chart(close_df, use_container_width=True, height=300)
+    # Slice historical dataframe based on timeframe selection
+    plot_df = hist.copy()
+    if timeframe == "Last 30 Days":
+        plot_df = plot_df.tail(30)
+    elif timeframe == "Last 60 Days":
+        plot_df = plot_df.tail(60)
+    elif timeframe == "Last 90 Days":
+        plot_df = plot_df.tail(90)
 
-    # Volume chart
-    with st.expander("📦 Trading Volume"):
-        vol_df = pd.DataFrame({"Volume": hist["Volume"]})
-        vol_df.index = pd.to_datetime(vol_df.index).tz_localize(None)
-        st.bar_chart(vol_df, use_container_width=True, height=200)
-
-    mi = market_data.get("market_info", {})
-    col1, col2, col3 = st.columns(3)
-    col1.metric("52-Week High", f"₹{mi.get('fifty_two_week_high', 'N/A')}")
-    col2.metric("52-Week Low",  f"₹{mi.get('fifty_two_week_low', 'N/A')}")
-    col3.metric("Sector",       mi.get("sector", "N/A"))
-
-
-def render_technical(tech_data: dict):
-    """Render technical indicators section."""
-
-    st.markdown('<div class="section-header">📉 Technical Analysis</div>', unsafe_allow_html=True)
-
-    rsi  = tech_data.get("indicators", {}).get("rsi",  {})
-    macd = tech_data.get("indicators", {}).get("macd", {})
-    sma  = tech_data.get("indicators", {}).get("sma",  {})
-
-    # Overall signal badge
-    overall = tech_data.get("overall_signal", "NEUTRAL")
-    score   = tech_data.get("signal_score", 0)
-    css_cls = f"signal-{overall.lower()}"
-    st.markdown(
-        f'<span class="{css_cls}">{overall}</span> '
-        f'<span style="color:#718096;font-size:0.85rem;margin-left:8px;">Score: {score:+d}</span>',
-        unsafe_allow_html=True
+    # Main Chart
+    fig_main = create_price_and_volume_chart(
+        plot_df,
+        company_name=market_data.get("company_name", ""),
+        symbol=market_data.get("symbol", ""),
+        chart_type=chart_type,
+        show_sma=show_sma,
+        show_bollinger=show_bb
     )
-    st.write("")
+    st.plotly_chart(fig_main, use_container_width=True)
 
-    col1, col2, col3 = st.columns(3)
+    # Subplot Oscillators in Expander or Columns
+    sub_col1, sub_col2 = st.columns(2)
+    with sub_col1:
+        rsi_series = tech_data.get("indicators", {}).get("rsi", {}).get("series")
+        if rsi_series is not None:
+            fig_rsi = create_rsi_chart(rsi_series.tail(len(plot_df)), market_data.get("symbol", ""))
+            st.plotly_chart(fig_rsi, use_container_width=True)
 
-    # --- RSI ---
-    with col1:
-        rsi_val  = rsi.get("value", 0) or 0
-        rsi_zone = rsi.get("zone", "Neutral")
-        rsi_color = "#fc8181" if rsi_zone == "Overbought" else ("#48bb78" if rsi_zone == "Oversold" else "#e2e8f0")
+    with sub_col2:
+        macd_ind = tech_data.get("indicators", {}).get("macd", {})
+        if "macd_series" in macd_ind and macd_ind["macd_series"] is not None:
+            fig_macd = create_macd_chart(
+                macd_ind["macd_series"].tail(len(plot_df)),
+                macd_ind["signal_series"].tail(len(plot_df)),
+                macd_ind["histogram_series"].tail(len(plot_df)),
+                market_data.get("symbol", "")
+            )
+            st.plotly_chart(fig_macd, use_container_width=True)
 
-        st.markdown(f"**RSI ({rsi.get('period',14)}-day)**")
-        st.markdown(f"<h2 style='color:{rsi_color};margin:0'>{rsi_val}</h2>", unsafe_allow_html=True)
-        st.caption(f"Zone: {rsi_zone}")
-        st.caption(rsi.get("interpretation", "")[:100])
 
-    # --- MACD ---
-    with col2:
-        macd_val  = macd.get("macd_latest", "N/A")
-        crossover = macd.get("crossover", "N/A")
-        hist_val  = macd.get("histogram_latest", 0) or 0
-        macd_color = "#48bb78" if hist_val > 0 else "#fc8181"
-
-        st.markdown("**MACD (12,26,9)**")
-        st.markdown(f"<h2 style='color:{macd_color};margin:0'>{macd_val}</h2>", unsafe_allow_html=True)
-        st.caption(f"Histogram: {hist_val}")
-        st.caption(crossover[:60] if crossover else "N/A")
-
-    # --- SMA ---
-    with col3:
-        sma20       = sma.get("sma20", "N/A")
-        sma50       = sma.get("sma50", "N/A")
-        trend       = sma.get("trend_structure", "N/A")
-        trend_color = "#48bb78" if "Golden" in str(trend) else "#fc8181"
-
-        st.markdown("**Moving Averages**")
-        st.markdown(f"SMA 20: **₹{sma20}**")
-        st.markdown(f"SMA 50: **₹{sma50}**")
-        st.markdown(f"<span style='color:{trend_color};font-size:0.8rem'>{str(trend)[:45]}</span>",
-                    unsafe_allow_html=True)
-
-    st.divider()
-
-    # Bullish / Bearish signal lists
-    signals = tech_data.get("signals", {})
-    bull_sigs = signals.get("bullish", [])
-    bear_sigs = signals.get("bearish", [])
-
+# =======================================================================
+# BULLISH VS BEARISH MATRIX
+# =======================================================================
+def render_bullish_bearish_matrix(tech_data: dict, fund_data: dict, news_data: dict, risk_data: dict):
     col_bull, col_bear = st.columns(2)
+
     with col_bull:
-        st.markdown(f"**✅ Bullish Signals ({len(bull_sigs)})**")
-        for s in bull_sigs:
-            st.markdown(f"<small>✅ {s}</small>", unsafe_allow_html=True)
+        st.markdown("""
+        <div class="matrix-card">
+            <div class="matrix-card-title" style="color:#10B981;">🟢 BULLISH ARGUMENTS & CATALYSTS</div>
+        """, unsafe_allow_html=True)
+        for s in tech_data.get("signals", {}).get("bullish", [])[:4]:
+            st.markdown(f"• <span style='font-size:0.88rem;'>{s}</span>", unsafe_allow_html=True)
+        for s in fund_data.get("strengths", [])[:4]:
+            st.markdown(f"• <span style='font-size:0.88rem;'>{s}</span>", unsafe_allow_html=True)
+        for c in news_data.get("positive_factors", [])[:2]:
+            st.markdown(f"• <span style='font-size:0.88rem;'>[News Catalyst] {c}</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     with col_bear:
-        st.markdown(f"**❌ Bearish Signals ({len(bear_sigs)})**")
-        for s in bear_sigs:
-            st.markdown(f"<small>❌ {s}</small>", unsafe_allow_html=True)
-
-    # RSI sparkline chart
-    rsi_series = rsi.get("series")
-    if rsi_series is not None:
-        with st.expander("📈 RSI Chart (last 90 days)"):
-            rsi_df = pd.DataFrame({"RSI": rsi_series.dropna()})
-            rsi_df.index = pd.to_datetime(rsi_df.index).tz_localize(None)
-            st.line_chart(rsi_df, height=200)
-            st.caption("RSI > 70 = Overbought (red zone) | RSI < 30 = Oversold (green zone)")
-
-
-def render_news(news_data: dict):
-    """Render the news sentiment section."""
-
-    st.markdown('<div class="section-header">📰 News & Sentiment Analysis</div>', unsafe_allow_html=True)
-
-    overall = news_data.get("overall_sentiment", "UNAVAILABLE")
-    count   = news_data.get("article_count", 0)
-    sc      = news_data.get("sentiment_count", {})
-
-    if count == 0:
-        st.warning(f"⚠️ {news_data.get('error_message', 'No news articles found.')}")
-        return
-
-    # Sentiment overview
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Overall Sentiment", overall)
-    col2.metric("✅ Positive", sc.get("positive", 0))
-    col3.metric("❌ Negative", sc.get("negative", 0))
-    col4.metric("🟡 Neutral",  sc.get("neutral", 0))
-
-    # Sentiment bar chart
-    sent_df = pd.DataFrame({
-        "Articles": [sc.get("positive",0), sc.get("negative",0), sc.get("neutral",0)]
-    }, index=["Positive", "Negative", "Neutral"])
-    st.bar_chart(sent_df, height=180, use_container_width=True)
-
-    # Key events
-    events = news_data.get("key_events", [])
-    if events:
-        st.markdown("**📌 Key Events Detected:**")
-        st.markdown("  ".join(f"`{e}`" for e in events))
-
-    # Headlines
-    st.markdown("**🗞️ Top Headlines:**")
-    for art in news_data.get("top_headlines", []):
-        icon  = art.get("sentiment_icon", "🟡")
-        title = art.get("title", "")
-        url   = art.get("url", "#")
-        source= art.get("source", "")
-        pub   = art.get("published", "")[:16]
-        st.markdown(
-            f"{icon} [{title[:90]}]({url})  "
-            f"<small style='color:#718096'>{source} · {pub}</small>",
-            unsafe_allow_html=True
-        )
-
-    # All articles expander
-    with st.expander(f"📄 All {count} Articles"):
-        for i, art in enumerate(news_data.get("articles", []), 1):
-            icon  = art.get("sentiment_icon", "🟡")
-            title = art.get("title", "")
-            url   = art.get("url", "#")
-            sent  = art.get("sentiment", "neutral")
-            score = f"+{art.get('pos_score',0)}/-{art.get('neg_score',0)}"
-            st.markdown(
-                f"{i}. {icon} [{title[:85]}]({url})  "
-                f"<small style='color:#718096'>[{sent} {score}]</small>",
-                unsafe_allow_html=True
-            )
+        st.markdown("""
+        <div class="matrix-card">
+            <div class="matrix-card-title" style="color:#EF4444;">🔴 BEARISH ARGUMENTS & RISKS</div>
+        """, unsafe_allow_html=True)
+        for s in tech_data.get("signals", {}).get("bearish", [])[:4]:
+            st.markdown(f"• <span style='font-size:0.88rem;'>{s}</span>", unsafe_allow_html=True)
+        for c in fund_data.get("concerns", [])[:4]:
+            st.markdown(f"• <span style='font-size:0.88rem;'>{c}</span>", unsafe_allow_html=True)
+        for r in risk_data.get("identified_risks", [])[:3]:
+            st.markdown(f"• <span style='font-size:0.88rem;'>[{r['category']}] {r['description']}</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
-def render_research(research_data: dict):
-    """Render the research & decision agent findings."""
+# =======================================================================
+# INVESTMENT SCENARIO CALCULATOR
+# =======================================================================
+def render_scenario_calculator(market_data: dict, decision_data: dict):
+    current_price = market_data.get("current_price") or 1.0
+    trade = decision_data.get("trade_setup", {})
+    expected_pct = trade.get("expected_return_pct") or 10.0
+    downside_pct = trade.get("potential_downside_pct") or 5.0
 
-    st.markdown('<div class="section-header">🧠 Research & Decision Agent</div>', unsafe_allow_html=True)
+    st.markdown("### 🧮 Investment Scenario & Return Simulator")
+    st.caption("Illustrative projected profit / loss across varying return outcomes for this stock.")
 
-    stance  = research_data.get("overall_stance", "NEUTRAL")
-    conf    = research_data.get("confidence", "N/A")
-    risk    = research_data.get("risk_level", "N/A")
+    calc_col1, calc_col2 = st.columns([2, 5])
+    with calc_col1:
+        invest_amount = st.number_input("Investment Capital (₹)", min_value=1000, max_value=5000000, value=50000, step=5000)
+        shares_bought = int(invest_amount // current_price)
+        invested_actual = safe_round(shares_bought * current_price)
+        st.info(f"Shares Purchased: **{shares_bought:,}**\n\nActual Outlay: **₹{invested_actual:,.2f}**")
 
-    # Overall assessment cards
-    col1, col2, col3 = st.columns(3)
+    with calc_col2:
+        scenarios = [
+            ("Severe Market Correction (-15%)", -15.0),
+            (f"Calculated Stop-Loss ({trade.get('potential_downside_fmt', '-5%')})", -downside_pct),
+            ("Conservative Stagnation (+5%)", 5.0),
+            (f"Target Upside ({trade.get('expected_return_fmt', '+10%')})", expected_pct),
+            ("Strong Bullish Breakout (+20%)", 20.0),
+        ]
 
-    css_cls = f"signal-{stance.lower()}"
-    col1.markdown(f"**Overall Stance**")
-    col1.markdown(f'<span class="{css_cls}">{stance}</span>', unsafe_allow_html=True)
-
-    col2.markdown(f"**Confidence**")
-    col2.markdown(f"**{conf}**")
-
-    risk_cls = f"risk-{risk.lower()}"
-    col3.markdown(f"**Risk Level**")
-    col3.markdown(f'<span class="{risk_cls}">⚠ {risk}</span>', unsafe_allow_html=True)
-
-    st.write("")
-
-    # Research summary
-    st.info(research_data.get("research_summary", ""))
-
-    # Agreements and conflicts
-    col_a, col_b = st.columns(2)
-    with col_a:
-        agreements = research_data.get("agreement_areas", [])
-        st.markdown(f"**✅ Signal Agreements ({len(agreements)})**")
-        for a in agreements:
-            st.success(a, icon="✅")
-
-    with col_b:
-        conflicts = research_data.get("conflict_areas", [])
-        st.markdown(f"**⚠️ Signal Conflicts ({len(conflicts)})**")
-        for c in conflicts:
-            st.warning(c, icon="⚠️")
-
-    # Risk factors
-    risks = research_data.get("risks", [])
-    if risks:
-        st.markdown(f"**⚠️ Risk Factors ({len(risks)}) — Level: {risk}**")
-        for r in risks:
-            st.error(f"**{r['name']}** — {r['description']}", icon="🔴")
-
-    # Key findings
-    with st.expander("📋 Key Findings"):
-        for i, f in enumerate(research_data.get("key_findings", []), 1):
-            st.markdown(f"**{i}.** {f}")
-
-    # Bullish/Bearish cases
-    with st.expander("🟢 Full Bullish Case"):
-        for b in research_data.get("bullish_case", []):
-            st.markdown(f"✅ {b}")
-
-    with st.expander("🔴 Full Bearish Case"):
-        for b in research_data.get("bearish_case", []):
-            st.markdown(f"❌ {b}")
+        rows = []
+        for name, pct in scenarios:
+            final_val = safe_round(invested_actual * (1 + pct / 100.0))
+            pnl = safe_round(final_val - invested_actual)
+            pnl_color = "🟢" if pnl >= 0 else "🔴"
+            rows.append({
+                "Outcome Scenario": name,
+                "Return %": format_percentage(pct),
+                "Projected Portfolio Value": f"₹{final_val:,.2f}",
+                "Estimated P&L": f"{pnl_color} {format_currency(pnl)}",
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
-def render_report(report_data: dict):
-    """Render the final AI research report."""
+# =======================================================================
+# STOCK COMPARISON VIEW (Feature A)
+# =======================================================================
+def render_comparison_tab():
+    st.markdown("### ⚖️ Multi-Stock Head-to-Head Comparison")
+    st.caption("Analyze 2 or 3 Indian equities simultaneously across fundamentals, momentum, risk, and AI verdicts.")
 
-    st.markdown('<div class="section-header">📄 Final Research Report</div>', unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns([3, 3, 3, 2])
+    with c1:
+        s1 = st.text_input("Stock 1", value="RELIANCE.NS").strip().upper()
+    with c2:
+        s2 = st.text_input("Stock 2", value="TCS.NS").strip().upper()
+    with c3:
+        s3 = st.text_input("Stock 3 (Optional)", value="INFY.NS").strip().upper()
+    with c4:
+        st.write("")
+        run_comp = st.button("Compare Equities", type="primary", use_container_width=True)
 
-    report_type = report_data.get("report_type", "template")
-    generated   = report_data.get("generated_at", "")
+    if run_comp:
+        targets = [s for s in [s1, s2, s3] if s]
+        with st.spinner("Analyzing stocks through multi-agent workflows..."):
+            comp_result = compare_stocks(targets)
 
-    # Report header info
-    col1, col2, col3 = st.columns(3)
-    col1.markdown(f"**Report Type:** `{'🤖 Gemini AI' if report_type == 'gemini' else '📋 Template'}`")
-    col2.markdown(f"**Generated:** {generated}")
-    if report_data.get("tokens_used") and report_data["tokens_used"] != 0:
-        col3.markdown(f"**Tokens Used:** {report_data.get('tokens_used', 'N/A')}")
+        if comp_result.get("status") == "success":
+            st.success(f"**Comparative Finding:** {comp_result['comparative_reasoning']}")
 
-    if report_type != "gemini":
-        st.info(
-            "ℹ️ **Template Mode Active** — This report is generated from real data collected "
-            "by all 5 agents. Gemini AI mode requires billing to be enabled at "
-            "[aistudio.google.com/billing](https://aistudio.google.com/billing).",
-            icon="ℹ️"
-        )
-
-    # Full report text
-    report_text = report_data.get("report_text", "No report generated.")
-    st.code(report_text, language=None)
-
-    # Download button
-    st.download_button(
-        label="⬇️ Download Report as .txt",
-        data=report_text,
-        file_name=f"{report_data.get('symbol','report')}_{generated[:10]}_report.txt",
-        mime="text/plain",
-        use_container_width=True,
-    )
-
-
-def render_market_details(market_data: dict):
-    """Render detailed market data in an expander."""
-
-    with st.expander("🏢 Full Company & Market Details"):
-        mi  = market_data.get("market_info", {})
-        vol = market_data.get("volume", {})
-        ds  = market_data.get("data_source", {})
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Company Info**")
-            st.markdown(f"- Sector: **{mi.get('sector','N/A')}**")
-            st.markdown(f"- Industry: **{mi.get('industry','N/A')}**")
-            st.markdown(f"- Exchange: **{mi.get('exchange','N/A')}**")
-            st.markdown(f"- Currency: **{mi.get('currency','INR')}**")
-            st.markdown(f"- EPS: **{mi.get('eps','N/A')}**")
-            st.markdown(f"- Dividend Yield: **{mi.get('dividend_yield','0')}%**")
-
-        with col2:
-            st.markdown("**Data Source**")
-            st.markdown(f"- Provider: **{ds.get('provider','N/A')}**")
-            st.markdown(f"- Type: **{ds.get('data_type','N/A')}**")
-            st.markdown(f"- Period: **{ds.get('data_from','N/A')}** to **{ds.get('data_to','N/A')}**")
-            st.markdown(f"- Records: **{ds.get('total_records','N/A')} trading days**")
-            st.markdown(f"- Latest Volume: **{vol.get('volume_formatted','N/A')}**")
-            st.markdown(f"- 30D Avg Volume: **{vol.get('avg_volume_30d', 'N/A'):,.0f}**"
-                        if vol.get('avg_volume_30d') else "- 30D Avg Volume: **N/A**")
+            df_comp = pd.DataFrame(comp_result["table_rows"])
+            display_cols = [
+                "Company", "Symbol", "Current Price", "1-Day Change", "1-Month Change",
+                "Market Cap", "P/E Ratio", "ROE", "RSI (14)", "Trend",
+                "Risk Profile", "AI Verdict", "P(Positive Return)", "Expected Target"
+            ]
+            st.dataframe(df_comp[display_cols], use_container_width=True, hide_index=True)
+        else:
+            st.error(comp_result.get("message", "Comparison failed."))
 
 
-# =============================================================
-# MAIN APP ENTRY POINT
-# =============================================================
+# =======================================================================
+# WATCHLIST & ALERTS VIEW (Feature B & C)
+# =======================================================================
+def render_watchlist_and_alerts_tab():
+    w_col1, w_col2 = st.columns([5, 4])
 
+    with w_col1:
+        st.markdown("### 📋 Personal Stock Watchlist")
+        live_watch = get_watchlist_live_data()
+        if live_watch:
+            watch_df = pd.DataFrame(live_watch)[["symbol", "name", "current_price_fmt", "pct_change_fmt", "last_verdict", "added_at"]]
+            watch_df.columns = ["Symbol", "Company", "Current Price", "1-Day Change", "AI Verdict", "Added Date"]
+            st.dataframe(watch_df, use_container_width=True, hide_index=True)
+
+            del_sym = st.selectbox("Remove from Watchlist", options=[item["symbol"] for item in live_watch])
+            if st.button("Remove Stock", key="btn_rem_watch"):
+                remove_from_watchlist(del_sym)
+                st.rerun()
+        else:
+            st.info("Watchlist is empty. Search for any stock and click 'Add to Watchlist'.")
+
+    with w_col2:
+        st.markdown("### 🔔 Price Trigger Alerts")
+        alerts = check_alerts_status()
+
+        with st.form("alert_form"):
+            a_sym = st.text_input("Symbol (e.g. RELIANCE.NS)").strip().upper()
+            a_price = st.number_input("Target Price (₹)", min_value=1.0, value=1500.0)
+            a_cond = st.selectbox("Condition", ["ABOVE", "BELOW"])
+            a_note = st.text_input("Alert Note (Optional)", placeholder="Breakout confirmation...")
+            submitted = st.form_submit_button("Set Price Alert")
+            if submitted and a_sym:
+                add_price_alert(a_sym, a_price, a_cond, a_note)
+                st.success(f"Alert set for {a_sym} at ₹{a_price:,.2f}")
+                st.rerun()
+
+        if alerts:
+            st.markdown("**Active Alerts:**")
+            for a in alerts:
+                stat = "🟢 TRIGGERED!" if a.get("triggered") else "⏳ Active"
+                st.markdown(
+                    f"• **{a['symbol']}** {a['condition']} ₹{a['target_price']:,.2f} — *{stat}* "
+                    f"<small style='color:#64748B;'>({a.get('note', '')})</small>",
+                    unsafe_allow_html=True
+                )
+
+
+# =======================================================================
+# MAIN APPLICATION CONTROLLER
+# =======================================================================
 def main():
-    # --- Sidebar: settings only (no symbol input here) ---
-    history_days, max_news = render_sidebar()
+    # Top Market Overview Ribbon (Nifty, Sensex, Bank Nifty)
+    render_market_overview_ribbon()
 
-    # --- Hero search bar: symbol + analyse button on main page ---
-    symbol, analyse_clicked = render_hero_search()
-
-    # --- Check config ---
-    if not validate_config():
-        st.error(
-            "⚠️ Configuration Error: GOOGLE_API_KEY is not set in your .env file. "
-            "Market data and technical analysis will still work. "
-            "Add your Gemini key for AI-powered reports."
-        )
-
-    # --- Welcome screen (before analysis) ---
-    if "last_result" not in st.session_state and not analyse_clicked:
+    # Sidebar settings
+    with st.sidebar:
+        st.markdown("### ⚙️ Terminal Settings")
+        hist_days = st.slider("Lookback History (Days)", 30, 365, 90, 30)
         st.divider()
+        st.markdown("### 🤖 6-Agent LangGraph System")
+        st.markdown("""
+        1. **Stock Data Agent** `yfinance`
+        2. **Technical Agent** `ta library`
+        3. **Fundamental Agent** `public filings`
+        4. **Market Sentiment Agent** `RSS & news`
+        5. **Risk Analysis Agent** `statistical VaR`
+        6. **Final Decision Agent** `synthesis & verdict`
+        """)
+        st.divider()
+        st.markdown("""
+        <div class="institutional-disclaimer">
+        <b>Academic Project:</b> Data delayed by ~15 min. No guarantee of future returns. Educational and research use only.
+        </div>
+        """, unsafe_allow_html=True)
 
-        col1, col2, col3 = st.columns(3)
-        col1.markdown("""
-**🤖 5 AI Agents**
-- Market Data Agent
-- Technical Analysis Agent
-- News Sentiment Agent
-- Research & Decision Agent
-- Report Generation Agent
-""")
-        col2.markdown("""
-**📊 Real Data Sources**
-- Yahoo Finance (NSE/BSE prices)
-- Google News RSS (headlines)
-- Technical indicators via `ta`
-- LangGraph orchestration
-""")
-        col3.markdown("""
-**📄 Output**
-- 9-section research report
-- RSI, MACD, SMA signals
-- News sentiment analysis
-- Risk assessment
-- Download as .txt
-""")
+    # Hero Search Component
+    symbol_query, exchange_choice, execute_analysis = render_search_hero()
 
-        st.info(
-            "☝️ Enter a stock symbol above (or click a quick-select chip) and click **🚀 Analyse** to begin.",
-            icon="☝️"
-        )
+    # Check for active analysis
+    if "analysis_results" not in st.session_state or execute_analysis:
+        if execute_analysis and symbol_query:
+            with st.spinner(f"Running 6-agent LangGraph orchestration for **{symbol_query}**..."):
+                res = run_cached_stock_analysis(symbol_query, hist_days, exchange_choice)
+                st.session_state["analysis_results"] = res
+        elif "analysis_results" not in st.session_state:
+            with st.spinner("Initializing default benchmark (RELIANCE)..."):
+                res = run_cached_stock_analysis("RELIANCE", hist_days, "NSE")
+                st.session_state["analysis_results"] = res
 
-        st.markdown(
-            '<div class="disclaimer">⚠️ <b>Academic Project Disclaimer:</b> '
-            'This system is built for educational purposes only. It does NOT provide '
-            'financial advice and does NOT guarantee investment returns. '
-            'All data is delayed by ~15-20 minutes. Never use for real trading decisions. '
-            'Always consult a SEBI-registered financial advisor.</div>',
-            unsafe_allow_html=True
-        )
-        return
-
-    # --- Run analysis ---
-    if analyse_clicked:
-        if not symbol or len(symbol) < 3:
-            st.error("Please enter a valid stock symbol (e.g. RELIANCE.NS)")
-            return
-
-        with st.spinner(f"🔄 Running 5-agent LangGraph analysis for **{symbol}**... (30-60 seconds)"):
-            result = cached_analysis(symbol, history_days, max_news)
-
-        st.session_state["last_result"] = result
-        st.session_state["last_symbol"] = symbol
-
-    # --- Show results ---
-    result = st.session_state.get("last_result")
+    result = st.session_state.get("analysis_results")
     if not result:
         return
 
-    # Check for workflow failure
     if result.get("workflow_status") == "failed":
-        st.error(f"❌ Analysis failed for `{symbol}`")
+        st.error(f"❌ Analysis failed for `{symbol_query}`")
         st.error(result.get("error_message", "Unknown error"))
-        st.info("💡 Check the symbol format: NSE stocks need `.NS` suffix (e.g. `RELIANCE.NS`)")
         return
 
-    # --- Unpack state ---
-    market_data   = result.get("market_data", {})
-    tech_data     = result.get("tech_data", {})
-    news_data     = result.get("news_data", {})
-    research_data = result.get("research_data", {})
-    report_data   = result.get("report_data", {})
+    # Unpack agent results
+    market_data = result.get("market_data", {})
+    tech_data = result.get("tech_data", {})
+    fund_data = result.get("fund_data", {})
+    news_data = result.get("news_data", {})
+    risk_data = result.get("risk_data", {})
+    decision_data = result.get("decision_data", {})
+    report_data = result.get("report_data", {})
 
-    # --- Header ---
-    render_header(market_data)
     st.divider()
 
-    # --- Tabs ---
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📊 Price & Chart",
+    # 1. Stock Overview Header
+    render_stock_overview_header(market_data, decision_data)
+
+    # 2. Prominent Final Verdict Banner ("Buy or Not?")
+    render_verdict_section(decision_data, market_data)
+
+    # 3. Comprehensive Analysis Tabs
+    tab_chart, tab_tech, tab_fund, tab_news, tab_risk, tab_matrix, tab_calc, tab_report, tab_comp, tab_watch = st.tabs([
+        "📈 Interactive Charts",
         "📉 Technical Analysis",
-        "📰 News & Sentiment",
-        "🧠 Research Assessment",
-        "📄 Full Report",
+        "🏢 Fundamentals",
+        "📰 Sentiment & News",
+        "⚠️ Risk Assessment",
+        "⚖️ Bull vs Bear",
+        "🧮 Scenario Calculator",
+        "📄 Research Report",
+        "🔄 Stock Comparison",
+        "⭐ Watchlist & Alerts"
     ])
 
-    with tab1:
-        render_price_chart(market_data)
-        render_market_details(market_data)
+    with tab_chart:
+        render_charts_tab(market_data, tech_data)
 
-    with tab2:
-        render_technical(tech_data)
+    with tab_tech:
+        st.markdown("### 📉 Technical Indicator Appraisal")
+        t_c1, t_c2, t_c3 = st.columns(3)
+        rsi = tech_data.get("indicators", {}).get("rsi", {})
+        macd = tech_data.get("indicators", {}).get("macd", {})
+        sma = tech_data.get("indicators", {}).get("sma", {})
+        bb = tech_data.get("indicators", {}).get("bollinger", {})
+        sr = tech_data.get("support_resistance", {})
 
-    with tab3:
-        render_news(news_data)
+        with t_c1:
+            st.metric("RSI (14-period)", str(rsi.get("value", "N/A")), delta=rsi.get("zone", "Neutral"))
+            st.caption(rsi.get("interpretation", ""))
+            st.markdown(f"**Pivot Points:** Pivot: `₹{sr.get('pivot','N/A')}` | R1: `₹{sr.get('resistance_1','N/A')}` | S1: `₹{sr.get('support_1','N/A')}`")
 
-    with tab4:
-        render_research(research_data)
+        with t_c2:
+            st.metric("MACD Status", macd.get("crossover", "N/A"), delta=str(macd.get("histogram_latest", "N/A")))
+            st.caption(macd.get("interpretation", ""))
+            st.markdown(f"**Bollinger Bands:** Upper: `₹{bb.get('upper','N/A')}` | Lower: `₹{bb.get('lower','N/A')}` | %B: `{bb.get('percent_b','N/A')}`")
 
-    with tab5:
-        render_report(report_data)
+        with t_c3:
+            st.metric("Trend Structure", tech_data.get("indicators", {}).get("trend", {}).get("trend", "N/A"))
+            st.markdown(f"• SMA 20: **₹{sma.get('sma20','N/A')}** ({sma.get('price_vs_sma20','N/A')})")
+            st.markdown(f"• SMA 50: **₹{sma.get('sma50','N/A')}** ({sma.get('price_vs_sma50','N/A')})")
+            st.markdown(f"• SMA 200: **₹{sma.get('sma200','N/A')}** ({sma.get('price_vs_sma200','N/A')})")
 
-    # --- Footer ---
-    st.divider()
-    st.markdown(
-        f'<div class="disclaimer">⚠️ <b>Disclaimer:</b> '
-        f'This report is generated by an AI system for academic purposes only. '
-        f'It is NOT financial advice. Data from Yahoo Finance (delayed ~15-20 min). '
-        f'Generated at {report_data.get("generated_at","N/A")} | '
-        f'LangGraph Multi-Agent System | 5 Agents</div>',
-        unsafe_allow_html=True
-    )
+        st.info(tech_data.get("summary", ""))
+
+    with tab_fund:
+        st.markdown("### 🏢 Fundamental & Valuation Analysis")
+        f_c1, f_c2, f_c3 = st.columns(3)
+        fm = fund_data.get("metrics", {})
+        with f_c1:
+            st.metric("Valuation Status", fund_data.get("valuation_status", "N/A"))
+            st.markdown(f"• P/E Ratio: **{fm.get('pe_ratio','N/A')}x** (Fwd: {fm.get('forward_pe','N/A')}x)")
+            st.markdown(f"• Price-to-Book (P/B): **{fm.get('pb_ratio','N/A')}x**")
+        with f_c2:
+            st.metric("Balance Sheet Health", fund_data.get("financial_health", "N/A"))
+            st.markdown(f"• Debt-to-Equity: **{fm.get('debt_to_equity','N/A')}**")
+            st.markdown(f"• Book Value: **₹{fm.get('book_value','N/A')}**")
+        with f_c3:
+            st.metric("Capital Productivity (ROE)", f"{fm.get('return_on_equity','N/A')}%" if fm.get('return_on_equity') else "N/A")
+            st.markdown(f"• Trailing EPS: **₹{fm.get('eps','N/A')}**")
+            st.markdown(f"• Dividend Yield: **{fm.get('dividend_yield','0.0')}%**")
+
+        st.info(fund_data.get("summary", ""))
+
+    with tab_news:
+        st.markdown("### 📰 Market News & Sentiment Analysis")
+        sc = news_data.get("sentiment_count", {})
+        n1, n2, n3, n4 = st.columns(4)
+        n1.metric("Overall Sentiment", news_data.get("overall_sentiment", "UNAVAILABLE"))
+        n2.metric("🟢 Positive", sc.get("positive", 0))
+        n3.metric("🔴 Negative", sc.get("negative", 0))
+        n4.metric("🟡 Neutral", sc.get("neutral", 0))
+
+        if news_data.get("key_events"):
+            st.markdown(f"**Detected Institutional Events:** {', '.join(news_data['key_events'])}")
+
+        st.markdown("**Top Verified Headlines:**")
+        for art in news_data.get("top_headlines", [])[:6]:
+            icon = art.get("sentiment_icon", "🟡")
+            title = art.get("title", "")
+            url = art.get("url", "#")
+            source = art.get("source", "News")
+            st.markdown(f"{icon} [{title}]({url}) — <span style='font-size:0.8rem;color:#64748B;'>{source}</span>", unsafe_allow_html=True)
+
+    with tab_risk:
+        st.markdown("### ⚠️ Risk Assessment & Volatility Modeling")
+        r1, r2, r3, r4 = st.columns(4)
+        r1.metric("Risk Profile", risk_data.get("risk_level", "MODERATE RISK"))
+        r2.metric("Annualized Volatility", f"{risk_data.get('volatility_annualized','N/A')}%")
+        r3.metric("Historical Max Drawdown", f"{risk_data.get('max_drawdown_pct','N/A')}%")
+        r4.metric("1-Day 95% VaR", f"{risk_data.get('var_95_1d','N/A')}%")
+
+        st.markdown(f"**Target Investor Suitability:** `{risk_data.get('investor_suitability', 'N/A')}`")
+        st.info(risk_data.get("summary", ""))
+
+    with tab_matrix:
+        st.markdown("### ⚖️ Bullish vs Bearish Factor Analysis")
+        render_bullish_bearish_matrix(tech_data, fund_data, news_data, risk_data)
+
+    with tab_calc:
+        render_scenario_calculator(market_data, decision_data)
+
+    with tab_report:
+        st.markdown("### 📄 Institutional Research Report")
+        rep_text = report_data.get("report_text", "")
+        st.text_area("Full Consolidated Research Report", rep_text, height=450)
+        st.download_button(
+            label="⬇️ Download Full Institutional Report (.txt)",
+            data=rep_text,
+            file_name=f"{market_data.get('symbol')}_Research_Report.txt",
+            mime="text/plain",
+            use_container_width=True
+        )
+
+    with tab_comp:
+        render_comparison_tab()
+
+    with tab_watch:
+        render_watchlist_and_alerts_tab()
+
+    st.markdown("""
+    <div class="institutional-disclaimer">
+    <b>MANDATORY FINANCIAL DISCLAIMER:</b> This platform is an artificial intelligence research prototype
+    developed strictly for educational and academic evaluation. Model predictions, probability scores,
+    and target levels are derived from mathematical models and historical datasets; they do NOT guarantee returns.
+    Consult a SEBI-registered investment advisor before making any financial commitments.
+    </div>
+    """, unsafe_allow_html=True)
 
 
-# --- Run the app ---
-if __name__ == "__main__" or True:
+if __name__ == "__main__":
     main()
